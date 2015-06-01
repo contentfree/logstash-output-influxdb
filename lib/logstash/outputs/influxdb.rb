@@ -83,7 +83,7 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
   # exec plugin).
   # 
   # This only applies when use_event_fields_for_data_points is true.
-  config :exclude_fields, :validate => :array, :default => []  
+  config :exclude_fields, :validate => :array, :default => ["@timestamp", "@version", "sequence", "message", "type"]  
 
   # This setting controls how many events will be buffered before sending a batch
   # of events. Note that these are only batched for the same series
