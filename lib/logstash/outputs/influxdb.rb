@@ -4,7 +4,7 @@ require "logstash/outputs/base"
 require "logstash/json"
 require "stud/buffer"
 
-# This output lets you output Metrics to InfluxDB
+# This output lets you output Metrics to InfluxDB (>= 0.9.0-rc31)
 #
 # The configuration here attempts to be as friendly as possible
 # and minimize the need for multiple definitions to write to
@@ -132,7 +132,7 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
     #     "retentionPolicy": "default",
     #     "points": [
     #         {
-    #             "name": "cpu_load_short",
+    #             "measurement": "cpu_load_short",
     #             "tags": {
     #                 "host": "server01",
     #                 "region": "us-west"
@@ -163,10 +163,10 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
     coerce_values!(point)
 
     event_hash = {
-      "name"      => event.sprintf(@series), 
-      "time"      => time,
-      "precision" => @time_precision,
-      "fields"    => point
+      "measurement" => event.sprintf(@series),
+      "time"        => time,
+      "precision"   => @time_precision,
+      "fields"      => point
     }
 
     buffer_receive(event_hash)
@@ -185,13 +185,13 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
     #    "time": "2009-11-10T23:00:00Z",
     #    "points": [
     #        {
-    #            "name": "cpu_load_short",
+    #            "measurement": "cpu_load_short",
     #            "fields": {
     #                "value": 0.64
     #            }
     #        },
     #        {
-    #            "name": "cpu_load_short",
+    #            "measurement": "cpu_load_short",
     #            "fields": {
     #                "value": 0.55
     #            },
@@ -199,7 +199,7 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
     #            "precision": "n"
     #        },
     #        {
-    #            "name": "network",
+    #            "measurement": "network",
     #            "tags": {
     #                "direction": "in"
     #            },
