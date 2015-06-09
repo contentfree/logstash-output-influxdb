@@ -85,6 +85,11 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
   # This only applies when use_event_fields_for_data_points is true.
   config :exclude_fields, :validate => :array, :default => ["@timestamp", "@version", "sequence", "message", "type"]  
 
+  # An array containing the names of fields to send to Influxdb as tags instead 
+  # of fields. Influxdb 0.9 convention is that values that do not change every
+  # request should be considered metadata and given as tags.
+  config :send_as_tags, :validate => :array, :default => ["host"]
+
   # This setting controls how many events will be buffered before sending a batch
   # of events. Note that these are only batched for the same series
   config :flush_size, :validate => :number, :default => 100
@@ -103,9 +108,10 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
 
   public
   def register
-    require "ftw" # gem ftw
+    require 'manticore'
     require 'cgi'
-    @agent = FTW::Agent.new
+    
+    @client = Manticore::Client.new
     @queue = []
 
     @query_params = "u=#{@user}&p=#{@password.value}"
@@ -161,6 +167,7 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
 
     exclude_fields!(point)
     coerce_values!(point)
+    tags, point = extract_tags(point)
 
     event_hash = {
       "measurement" => event.sprintf(@series),
@@ -168,6 +175,7 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
       "precision"   => @time_precision,
       "fields"      => point
     }
+    event_hash["tags"] = tags unless tags.empty?
 
     buffer_receive(event_hash)
   end # def receive
@@ -225,7 +233,8 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
   def post(body)
     begin
       @logger.debug? and @logger.debug("Post body: #{body}")
-      response = @agent.post!(@url, :body => body)
+      response = @client.post!(@url, :body => body)
+    
     rescue EOFError
       @logger.warn("EOF while writing request or reading response header from InfluxDB",
                    :host => @host, :port => @port)
@@ -302,6 +311,25 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
   # is useful for removing @timestamp, @version, etc
   def exclude_fields!(event_data)
     @exclude_fields.each { |field| event_data.delete(field) }
+  end
+
+
+  # Extract tags from a hash of fields. 
+  # Returns a tuple containing a hash of tags (as configured by send_as_tags) 
+  # and a hash of fields that exclude the tags.
+  # 
+  # Example: 
+  #   # Given send_as_tags: ["bar"]
+  #   original_fields = {"foo" => 1, "bar" => 2}
+  #   tags, fields = extract_tags(original_fields)
+  #   # tags: {"bar" => 2} and fields: {"foo" => 1}
+  def extract_tags(fields)
+    tags = {}
+    remainder = fields.dup
+
+    send_as_tags.each { |key| tags[key] = remainder.delete(key) if remainder.has_key?(key) }
+
+    [tags, remainder]
   end
 
 

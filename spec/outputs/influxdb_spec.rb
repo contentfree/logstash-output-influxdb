@@ -73,4 +73,38 @@ describe LogStash::Outputs::InfluxDB do
       pipeline.run
     end
   end
+
+  context "sending some fields as Influxdb tags" do
+    let(:config) do <<-CONFIG
+        input {
+           generator {
+             message => "foo=1 bar=2 baz=3 time=4"
+             count => 1
+             type => "generator"
+           }
+         }
+
+         filter {
+           kv { }
+         }
+
+         output {
+           influxdb {
+             host => "localhost"
+             allow_time_override => true
+             use_event_fields_for_data_points => true
+             exclude_fields => ["@version", "@timestamp", "sequence", "message", "type", "host"]
+             send_as_tags => ["bar", "baz"]
+           }
+         }
+      CONFIG
+    end
+
+    let(:json_result) { %q|{"database":"statistics","retentionPolicy":"default","points":[{"measurement":"logstash","time":"4","precision":"ms","fields":{"foo":"1"},"tags":{"bar":"2","baz":"3"}}]}| }
+
+    it "should send the specified fields as tags" do
+      expect_any_instance_of(LogStash::Outputs::InfluxDB).to receive(:post).with(json_result)
+      pipeline.run
+    end
+  end
 end
