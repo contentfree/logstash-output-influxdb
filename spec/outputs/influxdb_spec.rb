@@ -32,7 +32,7 @@ describe LogStash::Outputs::InfluxDB do
       CONFIG
     end
 
-    let(:json_result) { %q|{"database":"statistics","retentionPolicy":"default","points":[{"name":"logstash","time":"3","precision":"ms","fields":{"foo":"1","bar":"2"}},{"name":"logstash","time":"3","precision":"ms","fields":{"foo":"1","bar":"2"}}]}| }
+    let(:json_result) { %q|{"database":"statistics","retentionPolicy":"default","points":[{"measurement":"logstash","time":"3","precision":"ms","fields":{"foo":"1","bar":"2"}},{"measurement":"logstash","time":"3","precision":"ms","fields":{"foo":"1","bar":"2"}}]}| }
 
     it "should receive 2 events, flush and call post with 2 items json array" do
       expect_any_instance_of(LogStash::Outputs::InfluxDB).to receive(:post).with(json_result)
@@ -66,7 +66,7 @@ describe LogStash::Outputs::InfluxDB do
       CONFIG
     end
 
-    let(:json_result) { %q|{"database":"statistics","retentionPolicy":"default","points":[{"name":"logstash","time":"3","precision":"ms","fields":{"foo":"1","bar":"2"}}]}| }
+    let(:json_result) { %q|{"database":"statistics","retentionPolicy":"default","points":[{"measurement":"logstash","time":"3","precision":"ms","fields":{"foo":"1","bar":"2"}}]}| }
 
     it "should use the event fields as the data points, excluding @version and @timestamp by default as well as any fields configured by exclude_fields" do
       expect_any_instance_of(LogStash::Outputs::InfluxDB).to receive(:post).with(json_result)
