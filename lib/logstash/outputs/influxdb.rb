@@ -325,7 +325,10 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
     tags = {}
     remainder = fields.dup
 
-    send_as_tags.each { |key| tags[key] = remainder.delete(key) if remainder.has_key?(key) }
+    send_as_tags.each { |key| (tags[key] = remainder.delete(key)) if remainder.has_key?(key) }
+
+    tags.delete_if { |key,value| value.nil? || value == "" }
+    remainder.delete_if { |key,value| value.nil? || value == "" }
 
     [tags, remainder]
   end

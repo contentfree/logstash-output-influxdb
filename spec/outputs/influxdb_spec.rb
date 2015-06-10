@@ -94,7 +94,7 @@ describe LogStash::Outputs::InfluxDB do
              allow_time_override => true
              use_event_fields_for_data_points => true
              exclude_fields => ["@version", "@timestamp", "sequence", "message", "type", "host"]
-             send_as_tags => ["bar", "baz"]
+             send_as_tags => ["bar", "baz", "qux"]
            }
          }
       CONFIG
