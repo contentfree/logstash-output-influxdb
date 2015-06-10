@@ -107,4 +107,37 @@ describe LogStash::Outputs::InfluxDB do
       pipeline.run
     end
   end
+
+  context "when fields data contains a list of tags" do
+    let(:config) do <<-CONFIG
+        input {
+           generator {
+             message => "foo=1 time=2"
+             count => 1
+             type => "generator"
+           }
+         }
+
+         filter {
+           kv { add_tag => [ "tagged" ] }
+         }
+
+         output {
+           influxdb {
+             host => "localhost"
+             allow_time_override => true
+             use_event_fields_for_data_points => true
+             exclude_fields => ["@version", "@timestamp", "sequence", "message", "type", "host"]
+           }
+         }
+      CONFIG
+    end
+
+    let(:json_result) { %q|{"database":"statistics","retentionPolicy":"default","points":[{"measurement":"logstash","time":"2","precision":"ms","fields":{"foo":"1"},"tags":{"tagged":true}}]}| }
+
+    it "should move them to the tags data" do
+      expect_any_instance_of(LogStash::Outputs::InfluxDB).to receive(:post).with(json_result)
+      pipeline.run
+    end
+  end
 end

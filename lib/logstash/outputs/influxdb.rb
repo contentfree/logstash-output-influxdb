@@ -167,6 +167,7 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
 
     exclude_fields!(point)
     coerce_values!(point)
+
     tags, point = extract_tags(point)
 
     event_hash = {
@@ -272,8 +273,14 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
   end # def teardown
 
 
+  # Create a data point from an event. If @use_event_fields_for_data_points is
+  # true, convert the event to a hash. Otherwise, use @data_points. Each key and 
+  # value will be run through event#sprintf with the exception of a non-String
+  # value (which will be passed through)
   def create_point_from_event(event)
-    Hash[ (@use_event_fields_for_data_points ? event.to_hash : @data_points).map { |k,v| [event.sprintf(k), event.sprintf(v)] }]
+    Hash[ (@use_event_fields_for_data_points ? event.to_hash : @data_points).map do |k,v| 
+      [event.sprintf(k), (String === v ? event.sprintf(v) : v)] 
+    end ]
   end
   
 
@@ -314,18 +321,25 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
 
   # Extract tags from a hash of fields. 
   # Returns a tuple containing a hash of tags (as configured by send_as_tags) 
-  # and a hash of fields that exclude the tags.
+  # and a hash of fields that exclude the tags. If fields contains a key 
+  # "tags" with an array, they will be moved to the tags hash (and each will be
+  # given a value of true)
   # 
   # Example: 
   #   # Given send_as_tags: ["bar"]
-  #   original_fields = {"foo" => 1, "bar" => 2}
+  #   original_fields = {"foo" => 1, "bar" => 2, "tags" => ["tag"]}
   #   tags, fields = extract_tags(original_fields)
-  #   # tags: {"bar" => 2} and fields: {"foo" => 1}
+  #   # tags: {"bar" => 2, "tag" => true} and fields: {"foo" => 1}
   def extract_tags(fields)
-    tags = {}
     remainder = fields.dup
 
-    send_as_tags.each { |key| (tags[key] = remainder.delete(key)) if remainder.has_key?(key) }
+    tags = if remainder.has_key?("tags") && remainder["tags"].respond_to?(:inject)
+      remainder.delete("tags").inject({}) { |tags, tag| tags[tag] = true; tags }
+    else
+      {}
+    end
+    
+    @send_as_tags.each { |key| (tags[key] = remainder.delete(key)) if remainder.has_key?(key) }
 
     tags.delete_if { |key,value| value.nil? || value == "" }
     remainder.delete_if { |key,value| value.nil? || value == "" }
