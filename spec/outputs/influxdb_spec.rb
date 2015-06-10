@@ -133,7 +133,7 @@ describe LogStash::Outputs::InfluxDB do
       CONFIG
     end
 
-    let(:json_result) { %q|{"database":"statistics","retentionPolicy":"default","points":[{"measurement":"logstash","time":"2","precision":"ms","fields":{"foo":"1"},"tags":{"tagged":true}}]}| }
+    let(:json_result) { %q|{"database":"statistics","retentionPolicy":"default","points":[{"measurement":"logstash","time":"2","precision":"ms","fields":{"foo":"1"},"tags":{"tagged":"true"}}]}| }
 
     it "should move them to the tags data" do
       expect_any_instance_of(LogStash::Outputs::InfluxDB).to receive(:post).with(json_result)

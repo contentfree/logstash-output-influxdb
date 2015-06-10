@@ -329,12 +329,12 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
   #   # Given send_as_tags: ["bar"]
   #   original_fields = {"foo" => 1, "bar" => 2, "tags" => ["tag"]}
   #   tags, fields = extract_tags(original_fields)
-  #   # tags: {"bar" => 2, "tag" => true} and fields: {"foo" => 1}
+  #   # tags: {"bar" => 2, "tag" => "true"} and fields: {"foo" => 1}
   def extract_tags(fields)
     remainder = fields.dup
 
     tags = if remainder.has_key?("tags") && remainder["tags"].respond_to?(:inject)
-      remainder.delete("tags").inject({}) { |tags, tag| tags[tag] = true; tags }
+      remainder.delete("tags").inject({}) { |tags, tag| tags[tag] = "true"; tags }
     else
       {}
     end
