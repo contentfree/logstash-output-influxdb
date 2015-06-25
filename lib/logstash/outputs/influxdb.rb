@@ -8,7 +8,7 @@ require "stud/buffer"
 #
 # The configuration here attempts to be as friendly as possible
 # and minimize the need for multiple definitions to write to
-# multiple series and still be efficient
+# multiple measurements and still be efficient
 #
 # the InfluxDB API let's you do some semblance of bulk operation
 # per http call but each call is database-specific
@@ -37,13 +37,13 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
   # The password for the user who access to the named database
   config :password, :validate => :password, :default => nil
 
-  # Series name - supports sprintf formatting
-  config :series, :validate => :string, :default => "logstash"
+  # Measurement name - supports sprintf formatting
+  config :measurement, :validate => :string, :default => "logstash"
 
   # Hash of key/value pairs representing data points to send to the named database
   # Example: `{'column1' => 'value1', 'column2' => 'value2'}`
   #
-  # Events for the same series will be batched together where possible
+  # Events for the same measurement will be batched together where possible
   # Both keys and values support sprintf formatting
   config :data_points, :validate => :hash, :default => {}, :required => true
 
@@ -91,7 +91,7 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
   config :send_as_tags, :validate => :array, :default => ["host"]
 
   # This setting controls how many events will be buffered before sending a batch
-  # of events. Note that these are only batched for the same series
+  # of events. Note that these are only batched for the same measurement
   config :flush_size, :validate => :number, :default => 100
 
   # The amount of time since last flush before a flush is forced.
@@ -114,7 +114,7 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
     @client = Manticore::Client.new
     @queue = []
 
-    @query_params = "u=#{@user}&p=#{@password.value}"
+    @query_params = "db=#{@db}&rp=#{@retention_policy}&precision=#{@time_precision}&u=#{@user}&p=#{@password.value}"
     @base_url = "http://#{@host}:#{@port}/write"
     @url = "#{@base_url}?#{@query_params}"
 
@@ -133,23 +133,8 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
     @logger.debug? and @logger.debug("Influxdb output: Received event: #{event}")
 
     # An Influxdb 0.9 event looks like this: 
-    # {
-    #     "database": "mydb",
-    #     "retentionPolicy": "default",
-    #     "points": [
-    #         {
-    #             "measurement": "cpu_load_short",
-    #             "tags": {
-    #                 "host": "server01",
-    #                 "region": "us-west"
-    #             },
-    #             "time": "2009-11-10T23:00:00Z",
-    #             "fields": {
-    #                 "value": 0.64
-    #             }
-    #         }
-    #     ]
-    # }
+    # cpu_load_short,host=server01,region=us-west value=0.64 1434055562000000000
+    #  ^ measurement  ^ tags (optional)            ^ fields   ^ timestamp (optional)
     # 
     # Since we'll be buffering them to send as a batch, we'll only collect
     # the values going into the points array
@@ -171,9 +156,8 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
     tags, point = extract_tags(point)
 
     event_hash = {
-      "measurement" => event.sprintf(@series),
+      "measurement" => event.sprintf(@measurement),
       "time"        => time,
-      "precision"   => @time_precision,
       "fields"      => point
     }
     event_hash["tags"] = tags unless tags.empty?
@@ -183,51 +167,8 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
 
 
   def flush(events, teardown = false)
-    # A batch POST for InfluxDB 0.9 looks like this:
-    # {
-    #    "database": "mydb",
-    #    "retentionPolicy": "default",
-    #    "tags": {
-    #        "host": "server01",
-    #        "region": "us-west"
-    #    },
-    #    "time": "2009-11-10T23:00:00Z",
-    #    "points": [
-    #        {
-    #            "measurement": "cpu_load_short",
-    #            "fields": {
-    #                "value": 0.64
-    #            }
-    #        },
-    #        {
-    #            "measurement": "cpu_load_short",
-    #            "fields": {
-    #                "value": 0.55
-    #            },
-    #            "time": 1422568543702900257,
-    #            "precision": "n"
-    #        },
-    #        {
-    #            "measurement": "network",
-    #            "tags": {
-    #                "direction": "in"
-    #            },
-    #            "fields": {
-    #                "value": 23422
-    #            }
-    #        }
-    #    ]
-    #}
-    
-    event_collection = {
-      "database"        => @db,
-      "retentionPolicy" => @retention_policy,
-      "points"          => events
-    }
-
-    @logger.debug? and @logger.debug("Flushing #{events.size} events to #{@url} - Event collection: #{event_collection} - Teardown? #{teardown}")
-
-    post(LogStash::Json.dump(event_collection))
+    @logger.debug? and @logger.debug("Flushing #{events.size} events to #{@url} - Teardown? #{teardown}")
+    post(events_to_request_body(events))
   end # def flush
 
 
@@ -235,7 +176,7 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
     begin
       @logger.debug? and @logger.debug("Post body: #{body}")
       response = @client.post!(@url, :body => body)
-    
+  
     rescue EOFError
       @logger.warn("EOF while writing request or reading response header from InfluxDB",
                    :host => @host, :port => @port)
@@ -257,7 +198,7 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
       @logger.debug? and @logger.debug("Body: #{body}")
     end
 
-    unless (200..299).include?(response.code)
+    unless response && (200..299).include?(response.code)
       @logger.error("Error writing to InfluxDB",
                     :response => response, :response_body => body,
                     :request_body => @queue.join("\n"))
@@ -271,6 +212,18 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
   def teardown
     buffer_flush(:final => true)
   end # def teardown
+
+
+  # A batch POST for InfluxDB 0.9 looks like this:
+  # cpu_load_short,host=server01,region=us-west value=0.64 cpu_load_short,host=server02,region=us-west value=0.55 1422568543702900257 cpu_load_short,direction=in,host=server01,region=us-west value=23422.0 1422568543702900257  
+  def events_to_request_body(events)
+    events.map do |event|
+      result = event["measurement"].dup
+      result << "," << event["tags"].map { |tag,value| "#{tag}=#{value}" }.join(',') if event.has_key?("tags")
+      result << " " << event["fields"].map { |field,value| "#{field}=#{value}" }.join(',')
+      result << " #{event["time"]}"
+    end.join(' ')
+  end
 
 
   # Create a data point from an event. If @use_event_fields_for_data_points is
@@ -366,6 +319,6 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
   # Only read the response body if its status is not 1xx, 204, or 304. TODO: Should 
   # also not try reading the body if the request was a HEAD
   def read_body?( response )
-    ! ([204,304].include?(response.code) || (100..199).include?(response.code))
+    ! (response.nil? || [204,304].include?(response.code) || (100..199).include?(response.code))
   end
 end # class LogStash::Outputs::InfluxDB
