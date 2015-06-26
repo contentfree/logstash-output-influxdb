@@ -220,7 +220,7 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
     events.map do |event|
       result = event["measurement"].dup
       result << "," << event["tags"].map { |tag,value| "#{tag}=#{value}" }.join(',') if event.has_key?("tags")
-      result << " " << event["fields"].map { |field,value| "#{field}=#{value}" }.join(',')
+      result << " " << event["fields"].map { |field,value| "#{field}=#{quoted(value)}" }.join(',')
       result << " #{event["time"]}"
     end.join(' ')
   end
@@ -245,16 +245,9 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
     @coerce_values.each do |column, value_type|
       if event_data.has_key?(column)
         begin
-          case value_type
-          when "integer"
-            @logger.debug? and @logger.debug("Converting column #{column} to type #{value_type}: Current value: #{event_data[column]}")
-            event_data[column] = event_data[column].to_i
-          when "float"
-            @logger.debug? and @logger.debug("Converting column #{column} to type #{value_type}: Current value: #{event_data[column]}")
-            event_data[column] = event_data[column].to_f
-          else
-            @logger.error("Don't know how to convert to #{value_type}")
-          end
+          @logger.debug? and @logger.debug("Converting column #{column} to type #{value_type}: Current value: #{event_data[column]}")
+          event_data[column] = coerce_value(value_type, event_data[column])
+
         rescue => e
           @logger.error("Unhandled exception", :error => e.message)
         end
@@ -262,6 +255,24 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
     end
 
     event_data
+  end
+
+
+  def coerce_value(value_type, value)
+    case value_type.to_sym
+    when :integer
+      value.to_i
+      
+    when :float
+      value.to_f
+
+    when :string
+      value.to_s
+    
+    else
+      @logger.warn("Don't know how to convert to #{value_type}. Returning value unchanged")
+      value  
+    end
   end
 
 
@@ -320,5 +331,11 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
   # also not try reading the body if the request was a HEAD
   def read_body?( response )
     ! (response.nil? || [204,304].include?(response.code) || (100..199).include?(response.code))
+  end
+
+
+  # Return a quoted string of the given value if it's not a number
+  def quoted(value)
+    Numeric === value ? value : %Q|"#{value.gsub('"','\"')}"|
   end
 end # class LogStash::Outputs::InfluxDB
