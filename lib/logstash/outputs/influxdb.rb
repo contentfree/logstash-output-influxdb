@@ -222,7 +222,7 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
       result << "," << event["tags"].map { |tag,value| "#{tag}=#{value}" }.join(',') if event.has_key?("tags")
       result << " " << event["fields"].map { |field,value| "#{field}=#{quoted(value)}" }.join(',')
       result << " #{event["time"]}"
-    end.join(' ')
+    end.join("\n") #each measurement should be on a separate line
   end
 
 
