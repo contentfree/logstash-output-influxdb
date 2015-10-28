@@ -39,6 +39,12 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
 
   # Measurement name - supports sprintf formatting
   config :measurement, :validate => :string, :default => "logstash"
+  
+  # Allow measurement from field - allow override of measurement name
+  config :allow_measurement_override, :validate => :boolean, :default => false
+
+  # Measurement from field - use measurement from field name
+  config :measurement_from_field, :validate => :string, :default => "measurement"
 
   # Hash of key/value pairs representing data points to send to the named database
   # Example: `{'column1' => 'value1', 'column2' => 'value2'}`
@@ -147,6 +153,14 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
         logger.error("Cannot override value of time without 'allow_time_override'. Using event timestamp")
       else
         time = point.delete("time")
+      end
+    end
+    
+    if @allow_measurement_override
+      unless point.has_key?(@measurement_from_field)
+        logger.error("Cannot override measurement, field specified does not exist. Using default.")
+      else
+        @measurement = point[@measurement_from_field]
       end
     end
 
