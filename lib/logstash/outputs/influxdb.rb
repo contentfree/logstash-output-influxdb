@@ -39,6 +39,12 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
 
   # Measurement name - supports sprintf formatting
   config :measurement, :validate => :string, :default => "logstash"
+  
+  # Allow measurement from field - allow override of measurement name
+  config :allow_measurement_override, :validate => :boolean, :default => false
+
+  # Measurement from field - use measurement from field name
+  config :measurement_from_field, :validate => :string, :default => "measurement"
 
   # Hash of key/value pairs representing data points to send to the named database
   # Example: `{'column1' => 'value1', 'column2' => 'value2'}`
@@ -90,6 +96,17 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
   # request should be considered metadata and given as tags.
   config :send_as_tags, :validate => :array, :default => ["host"]
 
+  # An array containing the names of fields to send to Influxdb as fields instead
+  # of tags. Influxdb 0.9 convention is that values that do not change every
+  # request should be considered metadata and given as tags. Enable with the
+  # prefer_tags option.
+  config :send_as_fields, :validate => :array, :default => ["value"]
+
+  # This setting sends fields as tags which may then be overridden per field
+  # using the send_as_fields setting. Influx 0.9 preference to tags indicates
+  # that more fields will be sent as tags than as fields.
+  config :prefer_tags, :validate => :boolean, :default => false
+  
   # This setting controls how many events will be buffered before sending a batch
   # of events. Note that these are only batched for the same measurement
   config :flush_size, :validate => :number, :default => 100
@@ -147,6 +164,14 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
         logger.error("Cannot override value of time without 'allow_time_override'. Using event timestamp")
       else
         time = point.delete("time")
+      end
+    end
+    
+    if @allow_measurement_override
+      unless point.has_key?(@measurement_from_field)
+        logger.error("Cannot override measurement, field specified does not exist. Using default.")
+      else
+        @measurement = point.delete(@measurement_from_field)
       end
     end
 
@@ -286,13 +311,20 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
   # Returns a tuple containing a hash of tags (as configured by send_as_tags) 
   # and a hash of fields that exclude the tags. If fields contains a key 
   # "tags" with an array, they will be moved to the tags hash (and each will be
-  # given a value of true)
+  # given a value of true). If prefer_tags is true, will instead move all values
+  # in fields to tags array except for values specificed in the send_as_fields
+  # array.
   # 
   # Example: 
   #   # Given send_as_tags: ["bar"]
   #   original_fields = {"foo" => 1, "bar" => 2, "tags" => ["tag"]}
   #   tags, fields = extract_tags(original_fields)
   #   # tags: {"bar" => 2, "tag" => "true"} and fields: {"foo" => 1}
+  # Example: 
+  #   # Given send_as_fields: ["bar"] and prefer_tags = true
+  #   original_fields = {"foo" => 1, "bar" => 2, "foobar" => 3}
+  #   tags, fields = extract_tags(original_fields)
+  #   # tags: {"foo" => 1, "foobar" => 3} and fields: {"bar" => 2}
   def extract_tags(fields)
     remainder = fields.dup
 
@@ -301,8 +333,12 @@ class LogStash::Outputs::InfluxDB < LogStash::Outputs::Base
     else
       {}
     end
-    
-    @send_as_tags.each { |key| (tags[key] = remainder.delete(key)) if remainder.has_key?(key) }
+
+    if @prefer_tags
+      remainder.each_pair { |key,value| (tags[key] = remainder.delete(key)) unless @send_as_fields.include?(key) }
+    else
+      @send_as_tags.each { |key| (tags[key] = remainder.delete(key)) if remainder.has_key?(key) }
+    end
 
     tags.delete_if { |key,value| value.nil? || value == "" }
     remainder.delete_if { |key,value| value.nil? || value == "" }

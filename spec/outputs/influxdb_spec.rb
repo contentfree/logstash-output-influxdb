@@ -115,6 +115,79 @@ describe LogStash::Outputs::InfluxDB do
     end
   end
 
+  context "sending some fields as Influxdb fields" do
+    let(:config) do <<-CONFIG
+        input {
+           generator {
+             message => "foo=1 bar=2 baz=3 time=4"
+             count => 1
+             type => "generator"
+           }
+         }
+
+         filter {
+           kv { }
+         }
+
+         output {
+           influxdb {
+             host => "localhost"
+             measurement => "my_series"
+             allow_time_override => true
+             prefer_tags => true
+             use_event_fields_for_data_points => true
+             exclude_fields => ["@version", "@timestamp", "sequence", "message", "type", "host"]
+             send_as_fields => ["foo"]
+           }
+         }
+      CONFIG
+    end
+
+    let(:expected_url)  { 'http://localhost:8086/write?db=statistics&rp=default&precision=ms&u=&p='}
+    let(:expected_body) { 'my_series,bar=2,baz=3 foo="1" 4' }
+
+    it "should send the specified fields as fields" do
+      expect_any_instance_of(Manticore::Client).to receive(:post!).with(expected_url, body: expected_body)
+      pipeline.run
+    end
+  end
+
+  context "sending field as Influxdb measurement" do
+    let(:config) do <<-CONFIG
+        input {
+           generator {
+             message => "foo=1 bar=2 baz=3 time=4"
+             count => 1
+             type => "generator"
+           }
+         }
+
+         filter {
+           kv { }
+         }
+
+         output {
+           influxdb {
+             host => "localhost"
+             allow_time_override => true
+             use_event_fields_for_data_points => true
+             exclude_fields => ["@version", "@timestamp", "sequence", "message", "type", "host"]
+             allow_measurement_override => true
+             measurement_from_field => "bar" 
+           }
+         }
+      CONFIG
+    end
+
+    let(:expected_url)  { 'http://localhost:8086/write?db=statistics&rp=default&precision=ms&u=&p='}
+    let(:expected_body) { 'bar baz="3",foo="1" 4' }
+
+    it "should send the specified fields as fields" do
+      expect_any_instance_of(Manticore::Client).to receive(:post!).with(expected_url, body: expected_body)
+      pipeline.run
+    end
+  end
+
   context "when fields data contains a list of tags" do
     let(:config) do <<-CONFIG
         input {
